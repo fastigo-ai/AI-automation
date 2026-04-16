@@ -1,0 +1,37 @@
+services:
+  # 1. API Web Service
+  - type: web
+    name: fastigo-agent-api
+    env: docker
+    plan: starter # Recommended for RAM (SentenceTransformers + Playwright)
+    region: singapore # Change as desired
+    envVars:
+      - key: PORT
+        value: 8000
+      - fromGroup: fastigo-secrets
+
+  # 2. Render Workflows Task Server (Worker)
+  - type: worker
+    name: fastigo-workflow-server
+    env: docker
+    dockerCommand: python workflow.py
+    plan: starter
+    region: singapore
+    envVars:
+      - fromGroup: fastigo-secrets
+
+envVarGroups:
+  - name: fastigo-secrets
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_DB_URI
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: GOOGLE_SHEETS_CREDENTIALS
+        sync: false
