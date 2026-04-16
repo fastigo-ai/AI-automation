@@ -1,16 +1,36 @@
-# Use an official Python image
-FROM python:3.11-slim
+# --- Stage 1: Builder ---
+FROM python:3.11-slim-bookworm AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=.
 
-# Install system dependencies for Playwright/Chromium
-# These are the essential libraries Render (and other Linux systems) need to run headless Chrome
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    gnupg \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /build
+
+# Install Python requirements into a local directory
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+
+# --- Stage 2: Runner ---
+FROM python:3.11-slim-bookworm AS runner
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV PATH="/install/bin:${PATH}"
+
+# Install runtime dependencies for Playwright/Chromium
+# These are only the libraries needed for execution, not building
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 \
     libatk-bridge2.0-0 \
     libcups2 \
@@ -29,19 +49,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Install Python requirements
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright browsers (pre-baked into image for faster spin-up)
-RUN playwright install chromium
+# Copy installed packages from builder
+COPY --from=builder /install /install
 
 # Copy application code
 COPY . .
 
+# Install Playwright browsers (in the runner stage so they persist)
+# We only install Chromium to keep it lightweight
+RUN playwright install chromium
+
 # Expose the API port
 EXPOSE 8000
 
-# The start command is handled by render.yaml blueprints or the dashboard.
-# We will use 'api/server.py' for the Web Service and 'workflow.py' for the Worker.
+# Start command
 CMD ["python", "api/server.py"]
