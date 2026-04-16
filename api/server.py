@@ -27,10 +27,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize shared components
-db = DatabaseManager()
-agent = WebChatbotAgent(db)
-ingestor = KnowledgeIngestor(db)
+# Initialize shared components lazily
+db = None
+agent = None
+ingestor = None
+
+@app.on_event("startup")
+async def startup_event():
+    global db, agent, ingestor
+    print("[TRACE] Application starting up...")
+    db = DatabaseManager()
+    agent = WebChatbotAgent(db)
+    ingestor = KnowledgeIngestor(db)
+    print("[TRACE] Components initialized.")
 
 class ChatRequest(BaseModel):
     session_id: str
