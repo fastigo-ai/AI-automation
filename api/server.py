@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from agents.web_agent import WebChatbotAgent
@@ -9,6 +10,22 @@ import asyncio
 # from workflow import scrape_task, capture_lead_task # Removed
 
 app = FastAPI(title="Fastigo AI Chatbot API")
+
+# Configure CORS
+origins = [
+    "https://fastigo.co",
+    "https://www.fastigo.co",
+    "http://localhost:3000",
+    "http://localhost:8000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize shared components
 db = DatabaseManager()
