@@ -1,20 +1,15 @@
 # --- Stage 1: Builder ---
 FROM python:3.11-slim-bookworm AS builder
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set working directory
 WORKDIR /build
 
-# Install Python requirements into a local directory
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
@@ -22,45 +17,47 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # --- Stage 2: Runner ---
 FROM python:3.11-slim-bookworm AS runner
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
-ENV PATH="/install/bin:${PATH}"
+# 1. Environment
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PATH="/install/bin:${PATH}" \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# Install runtime dependencies for Playwright/Chromium
-# These are only the libraries needed for execution, not building
+# 2. Install runtime deps + curl (for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpangocairo-1.0-0 \
-    libx11-xcb1 \
-    libxshmfence1 \
+    tini \
+    curl \
+    libnss3 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2 \
+    libpangocairo-1.0-0 libx11-xcb1 libxshmfence1 libglib2.0-0 \
+    libgtk-3-0 fonts-liberation libu2f-udev ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# 3. Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser \
+    && mkdir -p /app /ms-playwright \
+    && chown -R appuser:appuser /app /ms-playwright
+
 WORKDIR /app
 
-# Copy installed packages from builder
+# 4. Copy dependencies + code
 COPY --from=builder /install /install
+COPY --chown=appuser:appuser . .
 
-# Copy application code
-COPY . .
+# 5. Switch to non-root user
+USER appuser
 
-# Install Playwright browsers (in the runner stage so they persist)
-# We only install Chromium to keep it lightweight
-RUN playwright install chromium
+# 6. Install browser safely
+RUN playwright install chromium --no-deps
 
-# Expose the API port
 EXPOSE 8000
 
-# Start command
+# 7. Proper init system
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
 CMD ["python", "api/server.py"]
+
+# 8. Healthcheck (now curl exists)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/api/status || exit 1
